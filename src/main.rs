@@ -1,49 +1,54 @@
+mod save;
+
 use std::collections::HashMap;
 use std::io;
-use std::io::{Read, Write};
-use std::str::FromStr;
+#[allow(unused_imports)]
+use std::io::{ Read, Write };
+use std::process::exit;
+use signal_hook::{ consts::SIGINT, iterator::Signals };
+use std::{ error::Error, thread };
+use std::ops::Deref;
+use crate::save::TodoItem;
 
-struct TodoList {
-    map: HashMap<String, bool>
+pub struct TodoList {
+    map: HashMap<String, TodoItem>
 }
 
 impl TodoList {
-    fn insert(&mut self, key: String) -> Option<bool> {
-        self.map.insert(key, true)
+    fn insert(&mut self, key: String) -> Option<TodoItem> {
+        self.map.insert(key, TodoItem { details: String::new(), date: String::from("0"), done: false })
     }
     fn save(&self) -> Result<(), io::Error> {
         let mut content = String::new();
-        for (k,v) in &self.map {
-            let record = format!("{}\t{}\n", k, v);
+        for (k, _) in &self.map {
+            let v = self.map.get(k).expect("TODO: cannot find key to save");
+            let record = format!("{name},{details},{date},{done}\n", name = k, details = v.details, date = v.date, done = v.done);
             content.push_str(&record);
         }
-        std::fs::write("todo.txt", content).expect("TODO: Cannot write save file");
+        std::fs::write("todo.lmay", content).expect("TODO: Cannot write save file");
         Ok(())
-    }
-    fn new() -> Result<TodoList, io::Error> {
-        let mut f = std::fs::OpenOptions::new().write(true).create(true).read(true).open("todo.txt")?;
-        let mut content = String::new();
-        f.read_to_string(&mut content).expect("TODO: cannot read save");
-        let map: HashMap<String, bool> = content.lines()
-            .map(|line| line.splitn(2, "\t").collect::<Vec<&str>>())
-            .map(|v| (v[0], v[1]))
-            .map(|(k, v)| (String::from(k), bool::from_str(v).unwrap()))
-            .collect();
-        Ok(TodoList { map })
     }
     fn complete(&mut self, key: &String) -> Option<()> {
         match self.map.get_mut(key) {
-            Some(v) => Some(*v = false),
+            Some(v) => Some(v.done = true),
+            None => None,
+        }
+    }
+    fn set_detail(&mut self, key: &String, detail: String) -> Option<()> {
+        println!("key: {}", key);
+        println!("detail: {}", detail);
+        match self.map.get_mut(key) {
+            Some(v) => Some(v.details = detail),
             None => None,
         }
     }
     fn undone(&mut self, key: &String) -> Option<()> {
         match self.map.get_mut(key){
-            Some(v) => Some(*v = true),
+            Some(v) => Some(v.done = false),
             None => None,
         }
     }
-    fn remove(&mut self, key: &String) -> Option<bool> {
+    fn remove(&mut self, key: &String) -> Option<TodoItem> {
         self.map.remove(key)
     }
 }
@@ -64,7 +69,7 @@ fn main_loop_call() {
         //println!("action: {action}");
         //println!("item: {item}");
         //let action = std::env::args().nth(0);
-        let todo = TodoList::new().expect("Initialisation of db failed");
+        let todo = save::load().expect("TODO: cannot load save file"); //TodoList::new().expect("Initialisation of db failed");
         if action == "add" {
             add(todo, item)
         } else if action == "complete" {
@@ -96,19 +101,22 @@ fn complete(mut todo: TodoList, item: String){
 fn list(todo: TodoList){
     let mut size = 0;
     for (k, v) in todo.map {
-        if v { println!("\x1b[31m❌\x1b[0m -- \x1b[31m{}\x1b[0m", k) } else { println!("\x1b[32m✅\x1b[0m -- \x1b[32m{}\x1b[0m", k) };
+        if v.done { println!("\x1b[32m✅\x1b[0m -- \x1b[32m{}\x1b[0m", k) } else { println!("\x1b[31m❌\x1b[0m -- \x1b[31m{}\x1b[0m", k) };
         size += 1;
     }
     println!("\n     {} elements in the Todo List", size)
 }
 fn print_help(){
     print!("\n        <-- Help -->\n\n");
-    print!("\x1b[34madd\x1b[0m       \x1b[33m<item>\x1b[0m  -- \x1b[36mAdd an item to the todo list\x1b[0m\n");
-    print!("\x1b[34mremove\x1b[0m    \x1b[33m<item>\x1b[0m  -- \x1b[36mRemove an item to the todo list\x1b[0m\n");
-    print!("\x1b[34mcomplete\x1b[0m  \x1b[33m<item>\x1b[0m  -- \x1b[36mSpecify that this specific item is done\x1b[0m\n");
-    print!("\x1b[34mundone\x1b[0m    \x1b[33m<item>\x1b[0m  -- \x1b[36mSpecify that this specific item is to do\x1b[0m\n");
-    print!("\x1b[34mlist\x1b[0m              -- \x1b[36mList all items and if they are done\x1b[0m\n");
-    print!("\x1b[31mstop\x1b[0m              -- \x1b[31mStop the CLI\x1b[0m\n");
+    print!("\x1b[34madd\x1b[0m       \x1b[33m<item>\x1b[0m            -- \x1b[36mAdd an item to the todo list\x1b[0m\n");
+    print!("\x1b[34mremove\x1b[0m    \x1b[33m<item>\x1b[0m            -- \x1b[36mRemove an item to the todo list\x1b[0m\n");
+    print!("\x1b[34mcomplete\x1b[0m  \x1b[33m<item>\x1b[0m            -- \x1b[36mSpecify that this specific item is done\x1b[0m\n");
+    print!("\x1b[34mundone\x1b[0m    \x1b[33m<item>\x1b[0m            -- \x1b[36mSpecify that this specific item is to do\x1b[0m\n");
+    print!("\x1b[34mlist\x1b[0m                        -- \x1b[36mList all items and if they are done\x1b[0m\n");
+    print!("\x1b[34mdetail\x1b[0m    \x1b[33m<item>\x1b[0m  \x1b[33m<detail>\x1b[0m  -- \x1b[36mDefine a detail for a specifid item\x1b[0m\n");
+    print!("\x1b[33mclear\x1b[0m                       -- \x1b[33mClear the todo list\x1b[0m\n");
+    print!("\x1b[33mreload\x1b[0m                      -- \x1b[33mReload the todo list from the save file\x1b[0m\n");
+    print!("\x1b[31mstop\x1b[0m                        -- \x1b[31mStop the CLI\x1b[0m\n");
     io::stdout().flush().unwrap();
 }
 
@@ -140,10 +148,25 @@ fn format_args(data: String) -> Vec<String> {
     content
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
+    // signal handler
+    let mut signals = Signals::new(&[SIGINT])?;
+    thread::spawn(move || {
+        for _sig in signals.forever() {
+            println!("\n      \x1b[34mBye!\x1b[0m");
+            exit(0);
+        }
+    });
+
+    // CLI
     if std::env::args().len() < 2 {
-        let mut todo = TodoList::new().expect("Initialisation of db failed");
         let mut restart: bool = true;
+
+        //let mut todo = TodoList::new().expect("Initialisation of db failed");
+        let mut todo = save::load().expect("TODO: cannot load save file");
+
+
+
 
         while restart {
             println!("\n\x1b[2mType help to get the command list\x1b[0m");
@@ -185,7 +208,13 @@ fn main() {
                     println!("Sending the list...\n");
                     let mut size = 0;
                     for (k, v) in &todo.map {
-                        if *v { println!("\x1b[31m❌\x1b[0m -- \x1b[31m{}\x1b[0m", k) } else { println!("\x1b[32m✅\x1b[0m -- \x1b[32m{}\x1b[0m", k) };
+                        if v.done {
+                            if v.details.len() > 0 { println!("\x1b[32m✅\x1b[0m -- \x1b[32m{}\x1b[0m -> \x1b[2m{}\x1b[0m", k, v.details) }
+                            else { println!("\x1b[32m✅\x1b[0m -- \x1b[32m{}\x1b[0m", k) }
+                        } else {
+                            if v.details.len() > 0 { println!("\x1b[31m❌\x1b[0m -- \x1b[31m{}\x1b[0m -> \x1b[2m{}\x1b[0m", k, v.details) }
+                            else { println!("\x1b[31m❌\x1b[0m -- \x1b[31m{}\x1b[0m", k) }
+                        };
                         size += 1;
                     }
                     println!("\n     {} elements in the Todo List", size)
@@ -250,10 +279,36 @@ fn main() {
                             Err(why) => println!("An error occurred: {}", why)
                         }
                     } else { println!("\n     \x1b[31mThe todo list is already empy.\x1b[0m") }
+                } else if action == "reload" {
+                    todo = save::load().expect("TODO: cannot load save file"); // TodoList::new().expect("Fail to load file");
+                    println!("\n     \x1b[32mThe todo list has been reloaded !\x1b[0m")
+                } else if action == "detail" {
+                    let mut item_content = String::new();
+                    for s in args { item_content.push_str(&*format!("{} ", String::from(s))) };
+                    item_content = item_content.trim().parse().unwrap();
+                    let item_args = format_args(item_content);
+
+                    let raw_item = item_args.get(0);
+                    let item = raw_item.as_deref().unwrap();
+
+                    let raw_detail = item_args.get(1).expect("TODO: cannot find raw_detail");
+                    let detail: String = String::from(raw_detail.deref());
+
+                    match todo.set_detail(item, detail) {
+                        Some(_) => match todo.save(){
+                            Ok(_) => println!("The detail of the item \x1b[34m{}\x1b[0m has been updated !", item),
+                            Err(why) => println!("An error occurred: {}", why)
+                        }
+                        None => println!("\nThe item \x1b[34m{currentItem}\x1b[0m doesn't exist", currentItem = item)
+                    }
                 }
             }
 
         }
-        println!("\n      \x1b[34mBye!\x1b[0m")
-    } else { main_loop_call() }
+        println!("\n      \x1b[34mBye!\x1b[0m");
+        Ok(())
+    } else {
+        main_loop_call();
+        Ok(())
+    }
 }
