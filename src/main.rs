@@ -35,8 +35,6 @@ impl TodoList {
         }
     }
     fn set_detail(&mut self, key: &String, detail: String) -> Option<()> {
-        println!("key: {}", key);
-        println!("detail: {}", detail);
         match self.map.get_mut(key) {
             Some(v) => Some(v.details = detail),
             None => None,

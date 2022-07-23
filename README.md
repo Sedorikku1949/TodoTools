@@ -1,7 +1,7 @@
 # TodoTools
 
 > TodoTools is a Rust based CLI program that let you create and customize your todo list
-
+> 
 > TodoTools have a lot of features like todo details, done/undone and much more !
 
 ## How to compile ?
