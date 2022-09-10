@@ -1,5 +1,3 @@
-extern crate core;
-
 mod todolist;
 mod handler;
 
