@@ -1,0 +1,5 @@
+#!/bin/bash
+echo "[36mStarting the current project...[0m"
+echo "[33mPlease let the compiler do his job ![0m"
+
+cargo build && cargo run -- $@
