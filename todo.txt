@@ -1,2 +1,0 @@
-nsi	true
-sleep	true
